@@ -290,12 +290,16 @@ func (item *Item) _truncate(size int64) (err error) {
 //
 // call with the lock held
 func (item *Item) _truncateToCurrentSize() (err error) {
-	size, err := item._getSize()
+	size, backingFileSize, err := item._getSize()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("truncate to current size: %w", err)
 	}
 	if size < 0 {
 		// FIXME ignore unknown length files
+		return nil
+	}
+	// No need to truncate if it is the right size
+	if size == backingFileSize {
 		return nil
 	}
 	err = item._truncate(size)
@@ -324,7 +328,7 @@ func (item *Item) Truncate(size int64) (err error) {
 	}
 
 	// Read old size
-	oldSize, err := item._getSize()
+	oldSize, _, err := item._getSize()
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("truncate failed to read size: %w", err)
@@ -369,21 +373,25 @@ func (item *Item) _stat() (fi os.FileInfo, err error) {
 
 // _getSize gets the current size of the item and updates item.info.Size
 //
+// # It also returns the backing file size, -1 if not found
+//
 // Call with mutex held
-func (item *Item) _getSize() (size int64, err error) {
+func (item *Item) _getSize() (size, backingFileSize int64, err error) {
 	fi, err := item._stat()
 	if err != nil {
 		if os.IsNotExist(err) && item.o != nil {
 			size = item.o.Size()
 			err = nil
 		}
+		backingFileSize = -1
 	} else {
 		size = fi.Size()
+		backingFileSize = size
 	}
 	if err == nil {
 		item.info.Size = size
 	}
-	return size, err
+	return size, backingFileSize, err
 }
 
 // GetName gets the vfs name of the item
@@ -397,7 +405,8 @@ func (item *Item) GetName() (name string) {
 func (item *Item) GetSize() (size int64, err error) {
 	item.mu.Lock()
 	defer item.mu.Unlock()
-	return item._getSize()
+	size, _, err = item._getSize()
+	return size, err
 }
 
 // _exists returns whether the backing file for the item exists or not
@@ -637,7 +646,7 @@ func (item *Item) Close(storeFn StoreFn) (err error) {
 	}
 
 	// Update the size on close
-	_, _ = item._getSize()
+	_, _, _ = item._getSize()
 
 	// If the file is dirty ensure any segments not transferred
 	// are brought in first.
@@ -749,7 +758,7 @@ func (item *Item) reload(ctx context.Context) error {
 		return err
 	}
 	// put the file into the directory listings
-	size, err := item._getSize()
+	size, _, err := item._getSize()
 	if err != nil {
 		return fmt.Errorf("reload: failed to read size: %w", err)
 	}
