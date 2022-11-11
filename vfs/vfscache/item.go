@@ -309,9 +309,10 @@ func (item *Item) _truncateToCurrentSize() (err error) {
 		return nil
 	}
 	// No need to truncate if it is the right size
-	if size == backingFileSize {
-		return nil
-	}
+	// FIXME
+	// if size == backingFileSize {
+	// 	return nil
+	// }
 	fs.Debugf(item.name, "_truncateToCurrentSize: need truncate - current size %d new size %d", backingFileSize, size)
 	err = item._truncate(size)
 	if err != nil {
