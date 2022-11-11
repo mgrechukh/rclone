@@ -235,6 +235,7 @@ func (item *Item) _save() (err error) {
 //
 // call with the lock held
 func (item *Item) _truncate(size int64) (err error) {
+	fs.Debugf(item.name, "_truncate: starting")
 	if size < 0 {
 		// FIXME ignore unknown length files
 		return nil
@@ -266,7 +267,9 @@ func (item *Item) _truncate(size int64) (err error) {
 
 		defer fs.CheckClose(fd, &err)
 
+		fs.Debugf(item.name, "_truncate: start SetSparse")
 		err = file.SetSparse(fd)
+		fs.Debugf(item.name, "_truncate: end SetSparse")
 		if err != nil {
 			fs.Errorf(item.name, "vfs cache: truncate: failed to set as a sparse file: %v", err)
 		}
@@ -274,7 +277,9 @@ func (item *Item) _truncate(size int64) (err error) {
 
 	fs.Debugf(item.name, "vfs cache: truncate to size=%d", size)
 
+	fs.Debugf(item.name, "_truncate: start Truncate")
 	err = fd.Truncate(size)
+	fs.Debugf(item.name, "_truncate: end Truncate")
 	if err != nil {
 		return fmt.Errorf("vfs cache: truncate: %w", err)
 	}
@@ -302,6 +307,7 @@ func (item *Item) _truncateToCurrentSize() (err error) {
 	if size == backingFileSize {
 		return nil
 	}
+	fs.Debugf(item.name, "_truncateToCurrentSize: need truncate - current size %d new size %d", backingFileSize, size)
 	err = item._truncate(size)
 	if err != nil {
 		return err
