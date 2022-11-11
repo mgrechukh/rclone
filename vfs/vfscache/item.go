@@ -12,6 +12,7 @@ import (
 
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/fserrors"
+	"github.com/rclone/rclone/fs/log"
 	"github.com/rclone/rclone/fs/operations"
 	"github.com/rclone/rclone/lib/file"
 	"github.com/rclone/rclone/lib/ranges"
@@ -191,6 +192,7 @@ func (item *Item) getDiskSize() int64 {
 
 // load reads an item from the disk or returns nil if not found
 func (item *Item) load() (exists bool, err error) {
+	defer log.Trace(item.name, "item=%p", item)("err=%v", &exists, &err)
 	item.mu.Lock()
 	defer item.mu.Unlock()
 	osPathMeta := item.c.toOSPathMeta(item.name) // No locking in Cache
@@ -214,6 +216,7 @@ func (item *Item) load() (exists bool, err error) {
 //
 // call with the lock held
 func (item *Item) _save() (err error) {
+	defer log.Trace(item.name, "item=%p", item)("err=%v", &err)
 	osPathMeta := item.c.toOSPathMeta(item.name) // No locking in Cache
 	out, err := os.Create(osPathMeta)
 	if err != nil {
@@ -235,6 +238,7 @@ func (item *Item) _save() (err error) {
 //
 // call with the lock held
 func (item *Item) _truncate(size int64) (err error) {
+	defer log.Trace(item.name, "item=%p size=%d", item, size)("err=%v", &err)
 	fs.Debugf(item.name, "_truncate: starting")
 	if size < 0 {
 		// FIXME ignore unknown length files
@@ -295,6 +299,7 @@ func (item *Item) _truncate(size int64) (err error) {
 //
 // call with the lock held
 func (item *Item) _truncateToCurrentSize() (err error) {
+	defer log.Trace(item.name, "item=%p", item)("err=%v", &err)
 	size, backingFileSize, err := item._getSize()
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("truncate to current size: %w", err)
@@ -324,6 +329,7 @@ func (item *Item) _truncateToCurrentSize() (err error) {
 // extended and the extended data will be filled with zeros. The
 // object will be marked as dirty in this case also.
 func (item *Item) Truncate(size int64) (err error) {
+	defer log.Trace(item.name, "item=%p size=%d", size)("err=%v", &err)
 	item.preAccess()
 	defer item.postAccess()
 	item.mu.Lock()
@@ -383,6 +389,7 @@ func (item *Item) _stat() (fi os.FileInfo, err error) {
 //
 // Call with mutex held
 func (item *Item) _getSize() (size, backingFileSize int64, err error) {
+	defer log.Trace(item.name, "item=%p", item)("size=%d, backingFileSize=%d, err=%v", &size, &backingFileSize, &err)
 	fi, err := item._stat()
 	if err != nil {
 		if os.IsNotExist(err) && item.o != nil {
@@ -435,6 +442,7 @@ func (item *Item) Exists() bool {
 //
 // call with lock held
 func (item *Item) _dirty() {
+	defer log.Trace(item.name, "item=%p", item)("")
 	item.info.ModTime = time.Now()
 	item.info.ATime = item.info.ModTime
 	if !item.modified {
@@ -471,6 +479,7 @@ func (item *Item) IsDirty() bool {
 // Create the cache file and store the metadata on disk
 // Called with item.mu locked
 func (item *Item) _createFile(osPath string) (err error) {
+	defer log.Trace(item.name, "item=%p osPath=%q", item, osPath)("err=%v", &err)
 	if item.fd != nil {
 		return errors.New("vfs cache item: internal error: didn't Close file")
 	}
@@ -520,7 +529,7 @@ func (item *Item) Open(o fs.Object) (err error) {
 // Open the local file from the object passed in (which may be nil)
 // which implies we are about to create the file
 func (item *Item) open(o fs.Object) (err error) {
-	// defer log.Trace(o, "item=%p", item)("err=%v", &err)
+	defer log.Trace(o, "item=%p", item)("err=%v", &err)
 	item.mu.Lock()
 	defer item.mu.Unlock()
 
@@ -584,7 +593,7 @@ func (item *Item) open(o fs.Object) (err error) {
 //
 // Call with lock held
 func (item *Item) _store(ctx context.Context, storeFn StoreFn) (err error) {
-	// defer log.Trace(item.name, "item=%p", item)("err=%v", &err)
+	defer log.Trace(item.name, "item=%p", item)("err=%v", &err)
 
 	// Transfer the temp file to the remote
 	cacheObj, err := item.c.fcache.NewObject(ctx, item.name)
@@ -632,7 +641,7 @@ func (item *Item) store(ctx context.Context, storeFn StoreFn) (err error) {
 
 // Close the cache file
 func (item *Item) Close(storeFn StoreFn) (err error) {
-	// defer log.Trace(item.o, "Item.Close")("err=%v", &err)
+	defer log.Trace(item.o, "storeFn=%p", storeFn)("err=%v", &err)
 	item.preAccess()
 	defer item.postAccess()
 	var (
@@ -784,7 +793,8 @@ func (item *Item) reload(ctx context.Context) error {
 // It ensures the file is the correct size for the object.
 //
 // call with lock held
-func (item *Item) _checkObject(o fs.Object) error {
+func (item *Item) _checkObject(o fs.Object) (err error) {
+	defer log.Trace(o, "item=%p", item)("err=%v", &err)
 	if o == nil {
 		if item.info.Fingerprint != "" {
 			// no remote object && local object
@@ -820,7 +830,7 @@ func (item *Item) _checkObject(o fs.Object) error {
 	}
 	item.o = o
 
-	err := item._truncateToCurrentSize()
+	err = item._truncateToCurrentSize()
 	if err != nil {
 		return fmt.Errorf("vfs cache item: open truncate failed: %w", err)
 	}
@@ -1121,7 +1131,7 @@ func (item *Item) FindMissing(r ranges.Range) (outr ranges.Range) {
 //
 // call with the item lock held
 func (item *Item) _ensure(offset, size int64) (err error) {
-	// defer log.Trace(item.name, "offset=%d, size=%d", offset, size)("err=%v", &err)
+	defer log.Trace(item.name, "offset=%d, size=%d", offset, size)("err=%v", &err)
 	if offset+size > item.info.Size {
 		size = item.info.Size - offset
 	}
@@ -1173,7 +1183,7 @@ func (item *Item) _ensure(offset, size int64) (err error) {
 //
 // call with lock held
 func (item *Item) _written(offset, size int64) {
-	// defer log.Trace(item.name, "offset=%d, size=%d", offset, size)("")
+	defer log.Trace(item.name, "offset=%d, size=%d", offset, size)("")
 	item.info.Rs.Insert(ranges.Range{Pos: offset, Size: size})
 }
 
@@ -1205,7 +1215,7 @@ func (item *Item) _setModTime(modTime time.Time) {
 
 // setModTime of the cache file and in the Item
 func (item *Item) setModTime(modTime time.Time) {
-	// defer log.Trace(item.name, "modTime=%v", modTime)("")
+	defer log.Trace(item.name, "modTime=%v", modTime)("")
 	item.mu.Lock()
 	item._updateFingerprint()
 	item._setModTime(modTime)
@@ -1219,7 +1229,7 @@ func (item *Item) setModTime(modTime time.Time) {
 
 // GetModTime of the cache file
 func (item *Item) GetModTime() (modTime time.Time, err error) {
-	// defer log.Trace(item.name, "modTime=%v", modTime)("")
+	defer log.Trace(item.name, "modTime=%v", modTime)("")
 	item.mu.Lock()
 	defer item.mu.Unlock()
 	fi, err := item._stat()
