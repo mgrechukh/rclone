@@ -485,11 +485,16 @@ func (item *Item) _createFile(osPath string) (err error) {
 		return errors.New("vfs cache item: internal error: didn't Close file")
 	}
 	item.modified = false
-	fd, err := file.OpenFile(osPath, os.O_RDWR, 0600)
+	t0 := time.Now()
+	fs.Debugf(item.name, "_createFile Open: starting")
+	fd, err := file.OpenFile(osPath, os.O_RDONLY, 0600)
+	fs.Debugf(item.name, "createFile Open: ending - took %v", time.Since(t0))
 	if err != nil {
 		return fmt.Errorf("vfs cache item: open failed: %w", err)
 	}
+	fs.Debugf(item.name, "_createFile SetSparse: starting")
 	err = file.SetSparse(fd)
+	fs.Debugf(item.name, "_createFile SetSparse: ending")
 	if err != nil {
 		fs.Errorf(item.name, "vfs cache: failed to set as a sparse file: %v", err)
 	}
